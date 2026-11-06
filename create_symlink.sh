@@ -3,6 +3,9 @@
 # 创建或更新软链接
 # 用法: ./create_symlink.sh <源目录> <目标目录>
 # 返回值: 0 = 成功, 1 = 失败
+# cd ~/.hermes/scripts/create_symlink.sh && chmod +x create_symlink.sh
+# ./create_symlink.sh /path/to/source /path/to/target
+# bash create_symlink.sh /path/to/source /path/to/target
 # =============================================================================
 
 set -euo pipefail
