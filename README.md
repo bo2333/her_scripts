@@ -1,6 +1,37 @@
 # 所有脚本支持 -help 参数获取用法,添加脚本需要身下面表添加说明
 - 目录：以相对路径， 这是软连接的目录,所有工具必须参数化的灵活性
 
+## 目录结构
+```text
+~/Public/                    # 根目录 
+├── external_bin             # 可执行公共文件            
+├── external_mcp             # mcp公共目录
+├── external_plugins         # 插件公共目录
+├── external_skills          # 技能公共目录 
+├── external_scripts         # 脚本公共路径, 本脚本路径
+```
+
+## 对应 hermes-agent default目录
+```text
+~/.hermes/          # 根目录 
+├── bin             # 可执行公共文件
+├── plugins         # 插件公共目录
+├── skills          # 技能公共目录 
+├── scripts         # 脚本公共路径, 本脚本路径
+```
+
+## 对应 hermes-agent profiles目录
+```text
+~/.hermes/          # 根目录 
+ └── profiles/
+      ├── <profile>/
+            ├── bin             # 可执行公共文件
+            ├── plugins         # 插件公共目录
+            ├── skills          # 技能公共目录 
+            ├── scripts         # 脚本公共路径, 本脚本路径
+```
+
+### ~/Public/external_skills
 | 路径| 说明|
 |:---|:---|
 | profiles/list_profiles.py| 列出 ~/.hermes/profiles 下所有 profile 名字，用于批量处理时获取|
