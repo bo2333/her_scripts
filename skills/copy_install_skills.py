@@ -77,6 +77,26 @@ def resolve_sync_dir(override: str | None) -> str:
     return os.path.abspath(candidates[1])
 
 
+def run_cmd(cmd, cwd=None) -> int | None:
+    """执行命令，返回 returncode；无法执行时返回 None。
+
+    区分 cwd 不存在与命令不存在两种 FileNotFoundError。
+    """
+    prefix = f">> 执行命令{' (cwd=' + cwd + ')' if cwd else ''}: "
+    print(prefix + " ".join(cmd))
+    try:
+        return subprocess.run(cmd, cwd=cwd).returncode
+    except FileNotFoundError:
+        if cwd and not os.path.isdir(cwd):
+            print(f"[FAIL] 工作目录不存在: {cwd}", file=sys.stderr)
+        else:
+            print(f"[FAIL] 命令不存在: {cmd[0]}", file=sys.stderr)
+        return None
+    except OSError as exc:
+        print(f"[FAIL] 执行失败: {exc}", file=sys.stderr)
+        return None
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -116,20 +136,14 @@ def main(argv=None) -> int:
     sync_cmd = [sys.executable, sync_py, src, target]
     for e in EXCLUDE:
         sync_cmd += ["--exclude", e]
-    if args.dry_run:
-        sync_cmd.append("--dry-run")
 
-    print(">> 执行命令: " + " ".join(sync_cmd))
     if args.dry_run:
-        print("   [dry-run] 未执行")
+        print(">> 将执行: " + " ".join(sync_cmd))
+        print(">> [dry-run] 未实际执行")
         return 0
-    try:
-        rc = subprocess.run(sync_cmd).returncode
-    except OSError as exc:
-        print(f"[FAIL] 执行失败: {exc}", file=sys.stderr)
-        return 1
 
-    if rc != 0:
+    rc = run_cmd(sync_cmd)
+    if rc is None or rc != 0:
         print("[FAIL] 同步失败", file=sys.stderr)
         return 1
 

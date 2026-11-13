@@ -50,7 +50,7 @@ def build_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("-help", action="help", help="显示此帮助信息并退出")
-    parser.add_argument("bin", metavar="<bin>", help="可执行文件/目录名")
+    parser.add_argument("bin", metavar="<bin>", help="可执行文件/目录名（源为单文件软链接时按内容复制，不保留链接）")
     parser.add_argument("profile", metavar="[profile]", nargs="?", default=None,
                         help="Profile 名称；省略或传 default 表示主 default profile")
     parser.add_argument("--source-dir", metavar="<dir>", default=None,

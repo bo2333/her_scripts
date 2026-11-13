@@ -48,7 +48,7 @@ def build_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("-help", action="help", help="显示此帮助信息并退出")
-    parser.add_argument("bin", metavar="<bin>", help="可执行文件/目录名")
+    parser.add_argument("bin", metavar="<bin>", help="可执行文件/目录名（悬空软链接视为不存在，会被拒绝）")
     parser.add_argument("profile", metavar="[profile]", nargs="?", default=None,
                         help="Profile 名称；省略或传 default 表示主 default profile")
     parser.add_argument("--source-dir", metavar="<dir>", default=None,

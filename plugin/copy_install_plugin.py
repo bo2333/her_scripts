@@ -74,16 +74,20 @@ def resolve_sync_dir(override: str | None) -> str:
     return os.path.abspath(candidates[1])
 
 
-def run(cmd, cwd=None, dry_run=False):
+def run_cmd(cmd, cwd=None) -> int | None:
+    """执行命令，返回 returncode；无法执行时返回 None。
+
+    区分 cwd 不存在与命令不存在两种 FileNotFoundError。
+    """
     prefix = f">> 执行命令{' (cwd=' + cwd + ')' if cwd else ''}: "
     print(prefix + " ".join(cmd))
-    if dry_run:
-        print("   [dry-run] 未执行")
-        return 0
     try:
         return subprocess.run(cmd, cwd=cwd).returncode
     except FileNotFoundError:
-        print(f"[FAIL] 命令不存在: {cmd[0]}", file=sys.stderr)
+        if cwd and not os.path.isdir(cwd):
+            print(f"[FAIL] 工作目录不存在: {cwd}", file=sys.stderr)
+        else:
+            print(f"[FAIL] 命令不存在: {cmd[0]}", file=sys.stderr)
         return None
     except OSError as exc:
         print(f"[FAIL] 执行失败: {exc}", file=sys.stderr)
@@ -129,20 +133,25 @@ def main(argv=None) -> int:
         print("提示：可用 --sync-dir 指定其路径", file=sys.stderr)
         return 1
 
-    # 1) 同步（sync_dir.py 内部处理 软链接/文件/目录 三种目标形态）
     sync_cmd = [sys.executable, sync_py, src, target]
     for e in EXCLUDE:
         sync_cmd += ["--exclude", e]
-    if args.dry_run:
-        sync_cmd.append("--dry-run")
 
-    rc = run(sync_cmd, dry_run=args.dry_run)
+    # dry-run：打印完整计划后直接返回，不执行 sync、不打印"已安装"、不执行 enable
+    if args.dry_run:
+        print(">> 将执行: " + " ".join(sync_cmd))
+        print(f">> 将执行: {' '.join(enable_cmd)}")
+        print(">> [dry-run] 未实际执行")
+        return 0
+
+    # 1) 同步
+    rc = run_cmd(sync_cmd)
     if rc is None or rc != 0:
         print("[FAIL] 同步失败", file=sys.stderr)
         return 1
 
     # 2) 启用（在目标目录下执行）
-    rc = run(enable_cmd, cwd=target, dry_run=args.dry_run)
+    rc = run_cmd(enable_cmd, cwd=target)
     if rc is None or rc != 0:
         print(f"[FAIL] 启用插件失败 (exit {rc})", file=sys.stderr)
         return 1

@@ -12,9 +12,9 @@
 行为:
     - target 是软链接：先移除链接本身（不跟随），再创建空目录
     - target 是普通文件：先删除，再创建空目录
-    - target 是目录：清空内容（保留名为 exclude 的顶层项，模拟 rsync --delete --exclude）后同步
-    - 优先 rsync -av --delete；无 rsync 时用 Python 兜底
-    - exclude 按 basename 匹配，作用于源里任意层级
+    - target 是目录：按 rsync -a --delete --exclude 的语义同步
+    - 优先 rsync -av --delete；无 rsync 时用 Python 兜底（语义与 rsync 一致）
+    - exclude 按 basename 匹配任意层级，且目标端已有的同名 exclude 项不会被删除
 
 返回值:
     0 = 成功
@@ -41,8 +41,9 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "将源目录内容镜像同步到目标目录。\n"
             "目标为软链接/普通文件时先移除，再创建空目录后同步。\n"
-            "优先使用 rsync -av --delete；无 rsync 时用 Python 兜底。\n"
-            "exclude 按 basename 匹配源里任意层级（同 rsync --exclude）。"
+            "优先使用 rsync -av --delete；无 rsync 时用 Python 兜底，\n"
+            "两者对 exclude 的语义一致：按 basename 匹配任意层级，\n"
+            "且目标端已有的同名 exclude 项不会被删除。"
         ),
         add_help=False, allow_abbrev=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -57,39 +58,62 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # ---------------------------------------------------------------------------
-# Python 兜底实现
+# Python 兜底实现（语义对齐 rsync -a --delete --exclude）
 # ---------------------------------------------------------------------------
 
-def _clear_dir_preserving(dst, exclude):
-    """清空 dst 内容，保留顶层名为 exclude 的条目（模拟 rsync --delete --exclude）。"""
-    for entry in os.listdir(dst):
-        if entry in exclude:
-            continue
-        path = os.path.join(dst, entry)
-        if os.path.islink(path) or not os.path.isdir(path):
-            os.remove(path)
-        else:
-            shutil.rmtree(path)
+def _sync_tree(src: str, dst: str, exclude: set) -> None:
+    """递归同步 src → dst，行为尽量匹配 rsync -a --delete --exclude。
 
+    规则:
+      - 源中有、目标中无：复制/创建
+      - 源和目标都有：更新（目录递归，文件/链接覆盖）
+      - 源中无、目标中有：删除（除非 basename 在 exclude 中）
+      - basename 在 exclude 中：双向跳过（不复制也不删除）
+      - 源端软链接：按链接本身复制（不跟随），避免链接循环
+    """
+    # 目标端若是文件/软链接，先清掉，让后续能创建目录
+    if os.path.lexists(dst) and (os.path.islink(dst) or not os.path.isdir(dst)):
+        os.remove(dst)
+    os.makedirs(dst, exist_ok=True)
 
-def _copy_contents(src, dst, exclude):
-    ignore = shutil.ignore_patterns(*exclude) if exclude else None
+    # 1. 复制/更新源内容到目标
     for entry in os.listdir(src):
         if entry in exclude:
             continue
         s = os.path.join(src, entry)
         d = os.path.join(dst, entry)
+
         if os.path.isdir(s) and not os.path.islink(s):
-            shutil.copytree(s, d, ignore=ignore, dirs_exist_ok=True)
+            _sync_tree(s, d, exclude)
+            continue
+
+        # 源是文件或软链接：先清掉目标端已有项（类型可能不同）
+        if os.path.lexists(d):
+            if os.path.islink(d) or not os.path.isdir(d):
+                os.remove(d)
+            else:
+                shutil.rmtree(d)
+        if os.path.islink(s):
+            os.symlink(os.readlink(s), d)
         else:
-            # 保留符号链接本身，不解引用
-            shutil.copy2(s, d, follow_symlinks=False)
+            shutil.copy2(s, d)
+
+    # 2. 删除目标端源没有的项（排除 exclude）
+    for entry in os.listdir(dst):
+        if entry in exclude:
+            continue
+        d = os.path.join(dst, entry)
+        s = os.path.join(src, entry)
+        if not os.path.lexists(s):
+            if os.path.islink(d) or not os.path.isdir(d):
+                os.remove(d)
+            else:
+                shutil.rmtree(d)
 
 
-def sync_with_python(src, dst, exclude):
+def sync_with_python(src: str, dst: str, exclude: list) -> bool:
     try:
-        _clear_dir_preserving(dst, set(exclude))
-        _copy_contents(src, dst, set(exclude))
+        _sync_tree(src, dst, set(exclude))
         return True
     except Exception as exc:
         print(f"[FAIL] 同步失败: {exc}", file=sys.stderr)
@@ -100,7 +124,7 @@ def sync_with_python(src, dst, exclude):
 # rsync 实现
 # ---------------------------------------------------------------------------
 
-def sync_with_rsync(src, dst, exclude):
+def sync_with_rsync(src: str, dst: str, exclude: list) -> bool:
     cmd = ["rsync", "-av", "--delete"]
     for e in exclude:
         cmd.append(f"--exclude={e}")
