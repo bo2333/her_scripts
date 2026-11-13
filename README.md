@@ -88,3 +88,12 @@
 | gc/scan.py | 扫描垃圾项（悬空链接 / 孤儿 / 结构异常），只读 |
 | gc/clean.py | 清理悬空链接与孤儿（只删目标侧，invalid 仅报告） |
 | file/hermes_paths.py | 共享路径与 profile 工具库（供 doctor/gc/manifest/batch 使用） |
+
+### 初资接入
+- 建立好hermes-agent后，初始化接入整个scripts。
+```
+#!/bin/bash
+# chmod +x init_scripts_default.sh
+~/.hermes/tools/python-3.14.9+20261021-linux-x64/bin/python3.14 ./file/create_symlink.py ~/Public/external_scripts ~/.hermes/scripts
+```
+
