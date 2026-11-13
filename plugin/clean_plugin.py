@@ -5,16 +5,17 @@
 
 用法:
     ./clean_plugin.py -help
-    ./clean_plugin.py <plugin>
-    ./clean_plugin.py <plugin> <profile>
+    ./clean_plugin.py <plugin> [profile]
 
 示例:
-    ./clean_plugin.py hermes-lcm            # 删除全局（default）插件
-    ./clean_plugin.py hermes-lcm ceo        # 删除 profile=ceo 的插件
+    ./clean_plugin.py hermes-lcm            # 全局（default）
+    ./clean_plugin.py hermes-lcm ceo        # profile=ceo
+    ./clean_plugin.py hermes-lcm default    # 显式 default（等价于省略）
 
 流程:
     1) hermes [-p <profile>] plugins disable <plugin>
     2) hermes [-p <profile>] plugins remove  <plugin>
+    disable 失败即终止（与原 `&&` 语义一致）；--skip-disable 可跳过 disable。
 
 返回值:
     0 = 成功
@@ -29,8 +30,6 @@ import sys
 
 
 class _ArgumentParser(argparse.ArgumentParser):
-    """参数错误时返回码为 1，与脚本语义保持一致。"""
-
     def error(self, message):
         self.print_usage(sys.stderr)
         print(f"[ERROR] {message}", file=sys.stderr)
@@ -42,35 +41,32 @@ def build_parser() -> argparse.ArgumentParser:
         prog=os.path.basename(sys.argv[0]) or "clean_plugin.py",
         description=(
             "删除（禁用并移除）hermes-agent 插件。\n"
-            "默认操作全局（default agent）插件；指定 profile 后操作该 profile 下的插件。\n"
+            "支持 default 主 profile 与指定 profile。\n"
             "执行顺序：\n"
             "  hermes [-p <profile>] plugins disable <plugin>\n"
             "  hermes [-p <profile>] plugins remove  <plugin>\n"
-            "其中 disable 成功后才执行 remove（与原脚本 `&&` 语义一致）；\n"
-            "若插件已禁用/残留，可用 --skip-disable 直接执行 remove。"
+            "disable 失败即终止；--skip-disable 可跳过 disable。"
         ),
-        add_help=False,
-        allow_abbrev=False,
+        add_help=False, allow_abbrev=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("-help", action="help", help="显示此帮助信息并退出")
-    parser.add_argument("plugin", metavar="<plugin>",
-                        help="插件名称，例如 hermes-lcm")
+    parser.add_argument("plugin", metavar="<plugin>", help="插件名称")
     parser.add_argument("profile", metavar="[profile]", nargs="?", default=None,
-                        help="可选的 Agent Profile 名称；省略时操作全局插件")
+                        help="Profile 名称；省略或传 default 表示主 default profile")
+    parser.add_argument("--hermes-home", metavar="<dir>", default=None,
+                        help="hermes 根目录（默认 $HOME/.hermes）")
     parser.add_argument("--skip-disable", action="store_true",
-                        help="跳过 disable 步骤，直接执行 remove（适用于插件已禁用/残留场景）")
+                        help="跳过 disable 步骤，直接 remove")
     parser.add_argument("--purge", action="store_true",
-                        help="remove 成功后，若插件目录仍残留则一并删除")
+                        help="remove 成功后清理残留（软链接只删链接本身）")
     return parser
 
 
-def run_cmd(cmd) -> int | None:
-    """执行命令，返回 returncode；无法执行时返回 None。"""
+def run_cmd(cmd):
     print(f">> 执行命令: {' '.join(cmd)}")
     try:
-        result = subprocess.run(cmd)
-        return result.returncode
+        return subprocess.run(cmd).returncode
     except FileNotFoundError:
         print(f"[FAIL] 命令不存在: {cmd[0]}", file=sys.stderr)
         return None
@@ -79,17 +75,14 @@ def run_cmd(cmd) -> int | None:
         return None
 
 
-def resolve_plugin_dir(plugin: str, profile: str | None) -> str:
-    """返回插件在磁盘上的默认目录（与 copy_install_plugin 的部署路径一致）。"""
-    home = os.path.expanduser("~")
-    if profile:
-        return os.path.join(home, ".hermes", "profiles", profile,
-                            "plugins", plugin)
-    return os.path.join(home, ".hermes", "plugins", plugin)
+def resolve_plugin_dir(plugin, profile, hermes_home):
+    """修复 P1：default 字面值等同省略，避免落到 profiles/default。"""
+    if profile is None or profile == "default":
+        return os.path.join(hermes_home, "plugins", plugin)
+    return os.path.join(hermes_home, "profiles", profile, "plugins", plugin)
 
 
-def purge_dir(path: str) -> None:
-    """删除目录/文件/软链接（含损坏软链）。"""
+def purge_path(path):
     if os.path.islink(path) or not os.path.isdir(path):
         os.remove(path)
     else:
@@ -100,17 +93,17 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
 
     plugin = args.plugin
-    profile = args.profile
+    raw_profile = args.profile
+    is_default = raw_profile is None or raw_profile == "default"
 
-    # 构建命令前缀
-    if profile:
-        prefix = ["hermes", "-p", profile]
-        print(f">> 模式: Profile [{profile}]")
-    else:
-        prefix = ["hermes"]
-        print(">> 模式: Global Default")
+    home = os.path.expanduser("~")
+    hermes_home = (os.path.abspath(os.path.expanduser(args.hermes_home))
+                   if args.hermes_home
+                   else os.path.join(home, ".hermes"))
 
-    # 1) disable
+    prefix = ["hermes"] if is_default else ["hermes", "-p", raw_profile]
+    print(f">> 模式: {'default' if is_default else raw_profile}")
+
     if args.skip_disable:
         print(">> 跳过 disable 步骤")
     else:
@@ -119,11 +112,10 @@ def main(argv=None) -> int:
             return 1
         if rc != 0:
             print(f"[FAIL] 禁用插件失败 (exit {rc})", file=sys.stderr)
-            print("提示：若插件已禁用/不存在，可加 --skip-disable 直接执行 remove",
+            print("提示：若插件已禁用/不存在，可加 --skip-disable 直接 remove",
                   file=sys.stderr)
             return 1
 
-    # 2) remove
     rc = run_cmd(prefix + ["plugins", "remove", plugin])
     if rc is None:
         return 1
@@ -131,26 +123,22 @@ def main(argv=None) -> int:
         print(f"[FAIL] 移除插件失败 (exit {rc})", file=sys.stderr)
         return 1
 
-    # 3) 可选：清理残留目录
     if args.purge:
-        plugin_dir = resolve_plugin_dir(plugin, profile)
-        if os.path.exists(plugin_dir) or os.path.islink(plugin_dir):
-            print(f">> 清理残留目录: {plugin_dir}")
+        target = resolve_plugin_dir(plugin, raw_profile, hermes_home)
+        if os.path.lexists(target):
+            print(f">> 清理残留: {target}")
             try:
-                purge_dir(plugin_dir)
+                purge_path(target)
             except OSError as exc:
-                print(f"[WARN] 清理残留目录失败: {exc}", file=sys.stderr)
+                print(f"[WARN] 清理残留失败: {exc}", file=sys.stderr)
         else:
-            print(f">> 目录已不存在，无需清理: {plugin_dir}")
+            print(f">> 目录已不存在，无需清理: {target}")
 
-    # 4) 完成
     bar = "=" * 66
     print(bar)
     print("✅ 插件删除完成！")
-    if profile:
-        print(f"   Profile: {profile} {plugin}")
-    else:
-        print(f"   Global:  {plugin}")
+    print(f"   Profile: {'default' if is_default else raw_profile}")
+    print(f"   Plugin:  {plugin}")
     print(bar)
     return 0
 

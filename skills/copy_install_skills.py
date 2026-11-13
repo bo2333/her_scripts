@@ -5,7 +5,6 @@
 
 用法:
     ./copy_install_skills.py -help
-    ./copy_install_skills.py <skill>
     ./copy_install_skills.py <skill> [profile]
 
 路径约定:
@@ -14,7 +13,12 @@
 
 说明:
     Skills 安装后自动作为斜杠命令可用，无需 enable 步骤。
-    若目标已存在，会先删除再复制（与 copy_install_plugin.py 一致）。
+    目标已存在时先删除再复制；软链接只删链接本身。
+    复制时保留符号链接（symlinks=True），与 `cp -rf` 一致。
+
+返回值:
+    0 = 成功
+    1 = 失败
 """
 
 import argparse
@@ -30,27 +34,27 @@ class _ArgumentParser(argparse.ArgumentParser):
         sys.exit(1)
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     parser = _ArgumentParser(
         prog=os.path.basename(sys.argv[0]) or "copy_install_skills.py",
         description=(
             "以复制方式安装 hermes-agent 技能。\n"
             "default 主 profile: $HOME/.hermes/skills/<skill>\n"
             "命名 profile:       $HOME/.hermes/profiles/<name>/skills/<skill>\n"
-            "技能安装后自动可用，无需显式启用。"
+            "目标已存在时先删除再复制；软链接只删链接本身。"
         ),
         add_help=False, allow_abbrev=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("-help", action="help", help="显示帮助并退出")
+    parser.add_argument("-help", action="help", help="显示此帮助信息并退出")
     parser.add_argument("skill", metavar="<skill>", help="技能名称")
     parser.add_argument("profile", metavar="[profile]", nargs="?", default=None,
-                        help="profile 名；省略或 default 表示主 default")
+                        help="Profile 名称；省略或传 default 表示主 default profile")
     parser.add_argument("--source-dir", metavar="<dir>", default=None,
-                        help="源根目录（默认 $HOME/Public/external_skills）")
+                        help="源目录根（默认 $HOME/Public/external_skills）")
     parser.add_argument("--hermes-home", metavar="<dir>", default=None,
-                        help="hermes 根（默认 $HOME/.hermes）")
-    parser.add_argument("--dry-run", action="store_true", help="仅打印计划")
+                        help="hermes 根目录（默认 $HOME/.hermes）")
+    parser.add_argument("--dry-run", action="store_true", help="只打印计划")
     return parser
 
 
@@ -61,6 +65,7 @@ def resolve_target(skill, profile, hermes_home):
 
 
 def purge(path):
+    """删除文件/软链接/目录（软链接只删链接本身）。"""
     if os.path.islink(path) or not os.path.isdir(path):
         os.remove(path)
     else:
@@ -88,16 +93,22 @@ def main(argv=None):
         return 1
 
     if args.dry_run:
-        print("[dry-run] 将删除目标并复制源")
+        print("[dry-run] 将删除目标（软链接只删链接本身）并复制源（保留符号链接）")
         return 0
 
     if os.path.lexists(target):
         print(f"[WARN] 目标已存在，正在删除: {target}")
-        purge(target)
+        # 修复 P3：purge 失败时给出明确错误，而不是冒泡成“复制失败”
+        try:
+            purge(target)
+        except OSError as exc:
+            print(f"[FAIL] 删除目标失败: {exc}", file=sys.stderr)
+            return 1
 
     try:
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        shutil.copytree(source, target, dirs_exist_ok=False)
+        # 修复 P2：保留源目录内的符号链接
+        shutil.copytree(source, target, dirs_exist_ok=False, symlinks=True)
     except Exception as exc:
         print(f"[FAIL] 复制失败: {exc}", file=sys.stderr)
         return 1
