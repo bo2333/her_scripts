@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-以复制方式安装 hermes-agent 技能（支持 default 主 profile 与指定 profile）。
+以复制方式安装 hermes-agent 技能。
 
 用法:
     ./copy_install_skills.py -help
     ./copy_install_skills.py <skill> [profile]
 
 路径约定:
-    default 主 profile : $HOME/.hermes/skills/<skill>
-    其它 profile       : $HOME/.hermes/profiles/<name>/skills/<skill>
+    default: $HOME/.hermes/skills/<skill>
+    profile: $HOME/.hermes/profiles/<name>/skills/<skill>
 
-说明:
-    Skills 安装后自动作为斜杠命令可用，无需 enable 步骤。
-    目标已存在时先删除再复制；软链接只删链接本身。
-    复制时保留符号链接（symlinks=True），与 `cp -rf` 一致。
+实现:
+    目录同步逻辑由 file/sync_dir.py 提供，本脚本只负责计算路径并调用。
+    Skills 安装后自动可用，无需 enable。
 
 返回值:
     0 = 成功
@@ -23,8 +22,11 @@
 
 import argparse
 import os
-import shutil
+import subprocess
 import sys
+
+
+EXCLUDE = ["node_modules", ".git"]
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -38,10 +40,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = _ArgumentParser(
         prog=os.path.basename(sys.argv[0]) or "copy_install_skills.py",
         description=(
-            "以复制方式安装 hermes-agent 技能。\n"
-            "default 主 profile: $HOME/.hermes/skills/<skill>\n"
-            "命名 profile:       $HOME/.hermes/profiles/<name>/skills/<skill>\n"
-            "目标已存在时先删除再复制；软链接只删链接本身。"
+            "以复制方式安装 hermes-agent 技能（排除 node_modules、.git）。\n"
+            "default: $HOME/.hermes/skills/<skill>\n"
+            "profile: $HOME/.hermes/profiles/<name>/skills/<skill>\n"
+            "目录同步由 file/sync_dir.py 完成；技能安装后自动可用。"
         ),
         add_help=False, allow_abbrev=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -54,26 +56,33 @@ def build_parser() -> argparse.ArgumentParser:
                         help="源目录根（默认 $HOME/Public/external_skills）")
     parser.add_argument("--hermes-home", metavar="<dir>", default=None,
                         help="hermes 根目录（默认 $HOME/.hermes）")
+    parser.add_argument("--sync-dir", metavar="<path>", default=None,
+                        help="sync_dir.py 路径（默认自动探测 file/sync_dir.py）")
     parser.add_argument("--dry-run", action="store_true", help="只打印计划")
     return parser
 
 
-def resolve_target(skill, profile, hermes_home):
-    if profile is None or profile == "default":
-        return os.path.join(hermes_home, "skills", skill), True
-    return os.path.join(hermes_home, "profiles", profile, "skills", skill), False
+def resolve_sync_dir(override: str | None) -> str:
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(script_dir, "file", "sync_dir.py"),
+        os.path.join(script_dir, os.pardir, "file", "sync_dir.py"),
+        os.path.join(script_dir, "sync_dir.py"),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            return os.path.abspath(path)
+    return os.path.abspath(candidates[1])
 
 
-def purge(path):
-    """删除文件/软链接/目录（软链接只删链接本身）。"""
-    if os.path.islink(path) or not os.path.isdir(path):
-        os.remove(path)
-    else:
-        shutil.rmtree(path)
-
-
-def main(argv=None):
+def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+
+    raw_profile = args.profile
+    is_default = raw_profile is None or raw_profile == "default"
+
     home = os.path.expanduser("~")
     source_root = (os.path.abspath(os.path.expanduser(args.source_dir))
                    if args.source_dir
@@ -81,36 +90,47 @@ def main(argv=None):
     hermes_home = (os.path.abspath(os.path.expanduser(args.hermes_home))
                    if args.hermes_home
                    else os.path.join(home, ".hermes"))
-    source = os.path.join(source_root, args.skill)
-    target, is_default = resolve_target(args.skill, args.profile, hermes_home)
+    src = os.path.join(source_root, args.skill)
 
-    print(f">> 源: {source}")
+    if is_default:
+        target = os.path.join(hermes_home, "skills", args.skill)
+        mode = "default"
+    else:
+        target = os.path.join(hermes_home, "profiles", raw_profile, "skills", args.skill)
+        mode = f"profile [{raw_profile}]"
+
+    print(f">> 模式: {mode}")
+    print(f">> 源:   {src}")
     print(f">> 目标: {target}")
-    print(f">> 模式: {'default' if is_default else args.profile}")
 
-    if not os.path.isdir(source):
-        print(f"[FAIL] 源目录不存在: {source}", file=sys.stderr)
+    if not os.path.isdir(src):
+        print(f"[FAIL] 源目录不存在: {src}", file=sys.stderr)
         return 1
 
+    sync_py = resolve_sync_dir(args.sync_dir)
+    if not os.path.isfile(sync_py):
+        print(f"[FAIL] 找不到 sync_dir.py: {sync_py}", file=sys.stderr)
+        print("提示：可用 --sync-dir 指定其路径", file=sys.stderr)
+        return 1
+
+    sync_cmd = [sys.executable, sync_py, src, target]
+    for e in EXCLUDE:
+        sync_cmd += ["--exclude", e]
     if args.dry_run:
-        print("[dry-run] 将删除目标（软链接只删链接本身）并复制源（保留符号链接）")
+        sync_cmd.append("--dry-run")
+
+    print(">> 执行命令: " + " ".join(sync_cmd))
+    if args.dry_run:
+        print("   [dry-run] 未执行")
         return 0
-
-    if os.path.lexists(target):
-        print(f"[WARN] 目标已存在，正在删除: {target}")
-        # 修复 P3：purge 失败时给出明确错误，而不是冒泡成“复制失败”
-        try:
-            purge(target)
-        except OSError as exc:
-            print(f"[FAIL] 删除目标失败: {exc}", file=sys.stderr)
-            return 1
-
     try:
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        # 修复 P2：保留源目录内的符号链接
-        shutil.copytree(source, target, dirs_exist_ok=False, symlinks=True)
-    except Exception as exc:
-        print(f"[FAIL] 复制失败: {exc}", file=sys.stderr)
+        rc = subprocess.run(sync_cmd).returncode
+    except OSError as exc:
+        print(f"[FAIL] 执行失败: {exc}", file=sys.stderr)
+        return 1
+
+    if rc != 0:
+        print("[FAIL] 同步失败", file=sys.stderr)
         return 1
 
     print(f"✅ 技能已安装: {target}")
