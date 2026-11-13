@@ -7,12 +7,26 @@ git config receive.denyCurrentBranch updateInstead
 # 2. 部署 post-receive hook
 mkdir -p .git/hooks
 cp file/hooks/post-receive .git/hooks/post-receive
+```
+
+### 设置文件属性
+```
+cd ~/Public/external_scripts
 chmod +x .git/hooks/post-receive
 
 # 3. 给 sync_push.sh 加执行位（如果 clone 没带过来）
 chmod +x file/sync_push.sh
 ```
 
+### clone
+```
+git config --global user.name  "hermes1"
+git config --global user.email "root@hermes1.local"
+
+git clone ~/Public/external_scripts ~/.hermes/scripts
+cd ~/.hermes/scripts
+chmod +x file/sync_push.sh
+```
 
 ### 验证：
 ```shell
