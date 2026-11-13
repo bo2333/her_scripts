@@ -52,17 +52,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def resolve_source(source: str):
-    """返回源目录的绝对路径；不可访问时返回 None。
+    """返回源的绝对路径；不存在或不可访问时返回 None。
 
-    等价于原脚本的 `cd "$SOURCE" && pwd`（要求源必须是目录）。
+    支持文件和目录（原版要求源必须是目录）。
     """
-    if not os.path.isdir(source):
+    if not os.path.exists(source):
         return None
     try:
         return os.path.realpath(source)
     except OSError:
         return None
-
 
 def resolve_target(target: str):
     """返回目标的绝对路径；父目录不可访问时返回 None。"""

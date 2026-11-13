@@ -1,7 +1,7 @@
 # 所有脚本支持 -help 参数获取用法,添加脚本需要身下面表添加说明
 - 目录：以相对路径， 这是软连接的目录,所有工具必须参数化的灵活性
 
-## 目录结构
+## 公共目录结构
 ```text
 ~/Public/                    # 根目录 
 ├── external_bin             # 可执行公共文件            
@@ -31,6 +31,33 @@
             ├── scripts         # 脚本公共路径, 本脚本路径
 ```
 
+
+### 目录布局
+```text
+~/Public/external_scripts/          # 脚本根（README 那节标题）
+├── file/
+│   ├── create_symlink.py
+│   ├── remove_symlink.py
+│   └── sync_dir.py
+├── profiles/
+│   └── list_profiles.py
+├── plugin/
+│   ├── symlink_install_plugin.py
+│   ├── copy_install_plugin.py
+│   ├── clean_plugin.py
+│   └── init_plugin.py
+├── skills/
+│   ├── symlink_install_skills.py
+│   ├── copy_install_skills.py
+│   ├── clean_skills.py
+│   └── init_skills.py
+└── bin/                           
+    ├── symlink_install_bin.py
+    ├── copy_install_bin.py
+    ├── clean_bin.py
+    └── init_bin.py
+```
+
 ### ~/Public/external_skills
 | 路径| 说明|
 |:---|:---|
@@ -45,3 +72,7 @@
 | skills/copy_install_skills.py | 技能安装方式2，不能直接软链接的技能,方式1：skills/symlink_install_skills.py |
 | skills/clean_skills.py| 删除（禁用并移除）hermes-agent 技能。|
 | skills/init_skills.py| 执行技能的额外初始化脚本。|
+| bin/symlink_install_bin.py | 软链接方式安装可执行文件（源可为文件或目录） |
+| bin/copy_install_bin.py    | 复制方式安装可执行文件（保留可执行位与符号链接） |
+| bin/clean_bin.py           | 卸载可执行文件（直接删除，不触碰源目录） |
+| bin/init_bin.py            | 在 bin 目录执行安装后初始化脚本 |
