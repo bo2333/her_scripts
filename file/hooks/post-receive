@@ -1,0 +1,30 @@
+#!/bin/sh
+# =============================================================================
+# post-receive hook：主副本收到 push 后，自动补推 GitHub。
+#
+# 部署:
+#   cp file/hooks/post-receive ~/Public/external_scripts/.git/hooks/
+#   chmod +x ~/Public/external_scripts/.git/hooks/post-receive
+#
+# 行为:
+#   - 取主副本当前分支，向 origin（GitHub）push
+#   - 失败只打印警告，exit 0，不影响主副本接收 push
+# =============================================================================
+
+MAIN="${MAIN_REPO:-$HOME/Public/external_scripts}"
+
+cd "$MAIN" 2>/dev/null || {
+    echo "[WARN] post-receive: 无法进入主副本 $MAIN" >&2
+    exit 0
+}
+
+BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo main)
+
+if git push origin "$BRANCH" >/dev/null 2>&1; then
+    echo "[OK] post-receive: 已补推 GitHub ($BRANCH)"
+else
+    echo "[WARN] post-receive: GitHub 推送失败，本地 commit 已保留" >&2
+    echo "       稍后可手动补推: cd $MAIN && git push origin $BRANCH" >&2
+fi
+
+exit 0
