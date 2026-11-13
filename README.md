@@ -38,7 +38,8 @@
 ├── file/
 │   ├── create_symlink.py
 │   ├── remove_symlink.py
-│   └── sync_dir.py
+│   ├── sync_dir.py
+│   └── hermes_paths.py          
 ├── profiles/
 │   └── list_profiles.py
 ├── plugin/
@@ -51,6 +52,12 @@
 │   ├── copy_install_skills.py
 │   ├── clean_skills.py
 │   └── init_skills.py
+├── doctor/                       # 新增
+│   ├── check_deps.py
+│   └── doctor.py
+├── gc/                           # 新增
+│   ├── scan.py
+│   └── clean.py
 └── bin/                           
     ├── symlink_install_bin.py
     ├── copy_install_bin.py
@@ -76,3 +83,8 @@
 | bin/copy_install_bin.py    | 复制方式安装可执行文件（保留可执行位与符号链接） |
 | bin/clean_bin.py           | 卸载可执行文件（直接删除，不触碰源目录） |
 | bin/init_bin.py            | 在 bin 目录执行安装后初始化脚本 |
+| doctor/check_deps.py | 检查 Python / hermes CLI / rsync / git 依赖 |
+| doctor/doctor.py | 扩展环境体检：悬空链接、孤儿、可执行位、目录结构 |
+| gc/scan.py | 扫描垃圾项（悬空链接 / 孤儿 / 结构异常），只读 |
+| gc/clean.py | 清理悬空链接与孤儿（只删目标侧，invalid 仅报告） |
+| file/hermes_paths.py | 共享路径与 profile 工具库（供 doctor/gc/manifest/batch 使用） |
