@@ -19,6 +19,9 @@
 # =============================================================================
 set -uo pipefail
 
+# 禁止任何交互式提示；失败即退出，便于自动化捕获
+export GIT_TERMINAL_PROMPT=0
+
 MAIN="${MAIN_REPO:-$HOME/Public/external_scripts}"
 BRANCH="main"
 PUSH_GITHUB=1

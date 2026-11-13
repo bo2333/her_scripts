@@ -6,10 +6,12 @@
 #   cp file/hooks/post-receive ~/Public/external_scripts/.git/hooks/
 #   chmod +x ~/Public/external_scripts/.git/hooks/post-receive
 #
-# 行为:
-#   - 取主副本当前分支，向 origin（GitHub）push
-#   - 失败只打印警告，exit 0，不影响主副本接收 push
+# 前提:
+#   ~/.ssh/known_hosts 已预置 GitHub host key（见 README 3.3）
 # =============================================================================
+
+# 禁止任何交互式提示（密码、host key 确认），失败即退出
+export GIT_TERMINAL_PROMPT=0
 
 MAIN="${MAIN_REPO:-$HOME/Public/external_scripts}"
 
